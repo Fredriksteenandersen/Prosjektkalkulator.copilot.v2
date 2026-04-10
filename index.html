@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prosjektkalkulator</title>
+
+  <!-- React / Babel / SheetJS fra CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root{
+      --bg-primary: #0f1117;
+      --bg-secondary: #1a1d27;
+      --bg-tertiary: #242836;
+      --border: #2e3348;
+      --text-primary: #e8eaf0;
+      --text-secondary: #8b8fa8;
+      --accent: #4f8cff;
+      --accent-hover: #6ba0ff;
+      --danger: #ff4d6a;
+      --success: #34d399;
+      --fag-byggtapetsering: #4f8cff;
+      --fag-bygginnredning: #f59e0b;
+      --fag-himling: #8b5cf6;
+      --fag-maler: #34d399;
+      --fag-tomrer: #f97316;
+      --fag-murer: #ef4444;
+    }
+
+    html,body{
+      height:100%;
+      margin:0;
+      background:var(--bg-primary);
+      color:var(--text-primary);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+    }
+
+    .app {
+      max-width:1200px;
+      margin:20px auto;
+      padding:18px;
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+      border:1px solid var(--border);
+      border-radius:12px;
+    }
+
+    header {
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:space-between;
+      margin-bottom:14px;
+    }
+
+    .brand { display:flex; gap:12px; align-items:center; }
+    .brand h1 { margin:0; font-size:18px; color:var(--text-primary); }
+    .brand .meta { color:var(--text-secondary); font-size:13px; }
+
+    .controls { display:flex; gap:8px; align-items:center; }
+    .controls button { background:var(--accent); color:white; border:0; padding:8px 12px; border-radius:8px; cursor:pointer; transition: all 0.2s ease; }
+    .controls button:hover { background:var(--accent-hover); }
+    .controls .danger { background:var(--danger); }
+    .controls .ghost { background:transparent; border:1px solid var(--border); color:var(--text-primary); }
+
+    .tabs { display:flex; gap:8px; margin-bottom:12px; }
+    .tab { background:var(--bg-secondary); padding:8px 12px; border-radius:8px; cursor:pointer; color:var(--text-primary); border:1px solid var(--border); transition: all 0.2s ease; }
+    .tab.active { background:linear-gradient(90deg, rgba(79,140,255,0.12), rgba(79,140,255,0.06)); box-shadow: 0 4px 10px rgba(79,140,255,0.06); border-bottom:3px solid var(--accent); }
+
+    /* Kalkulator layout */
+    .kalkulator { display:flex; flex-direction:column; gap:12px; }
+    .fagfaner { display:flex; gap:8px; overflow:auto; padding-bottom:6px; }
+    .fagfane { display:flex; gap:8px; align-items:center; padding:8px 12px; border-radius:8px; background:var(--bg-secondary); border:1px solid var(--border); cursor:pointer; transition:all 0.15s ease; white-space:nowrap; }
+    .fagfane.active { background:linear-gradient(90deg, rgba(255,255,255,0.02), transparent); box-shadow: inset 0 -3px 0 rgba(79,140,255,0.06); }
+    .fag-dot { width:10px; height:10px; border-radius:50%; }
+
+    .table-wrap { overflow:auto; border-radius:8px; border:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent); }
+    table { border-collapse:collapse; width:100%; min-width:980px; }
+    th, td { padding:8px 10px; border-bottom:1px solid var(--border); font-size:13px; color:var(--text-primary); }
+    th { text-align:left; background:var(--bg-secondary); position:sticky; top:0; z-index:2; }
+    td.small { width:80px; }
+    td.center { text-align:center; }
+    input[type="number"], input[type="text"] { background:var(--bg-tertiary); color:var(--text-primary); border:1px solid var(--border); padding:6px 8px; border-radius:6px; width:100%; box-sizing:border-box; }
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .notes { color:var(--text-secondary); font-size:12px; }
+
+    .actions button { margin-right:6px; }
+
+    .totals { display:flex; gap:12px; align-items:center; color:var(--text-secondary); font-size:14px; margin-top:8px; }
+
+    /* Gantt */
+    .gantt-controls { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+    .gantt-area { position:relative; overflow:auto; border:1px solid var(--border); background:var(--bg-secondary); padding:12px; border-radius:8px; min-height:220px; }
+    .timeline { position:relative; height:40px; margin-bottom:8px; display:flex; align-items:flex-end; gap:0; }
+    .timeline .week { min-width:150px; border-right:1px solid rgba(255,255,255,0.03); padding:4px 6px; color:var(--text-secondary); font-size:12px; }
+    .gantt-grid { position:relative; }
+    .gantt-row { position:relative; height:40px; border-bottom:1px dashed rgba(255,255,255,0.02); display:flex; align-items:center; gap:8px; }
+    .gantt-bar { position:absolute; height:28px; border-radius:4px; color:white; padding:4px 8px; font-size:12px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:grab; }
+    .legend { display:flex; gap:12px; margin-top:10px; flex-wrap:wrap; color:var(--text-secondary); font-size:13px; }
+
+    /* Sammendrag */
+    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+    .card { background:var(--bg-secondary); padding:12px; border-radius:8px; border:1px solid var(--border); position:relative; }
+    .card .leftbar { width:6px; height:100%; position:absolute; left:0; top:0; border-radius:4px 0 0 4px; }
+    .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; position:relative; padding-left:10px; }
+    .progress { height:10px; background:rgba(255,255,255,0.03); border-radius:6px; overflow:hidden; }
+    .progress > i { display:block; height:100%; background:var(--accent); width:0%; transition:width 0.3s ease; }
+
+    /* Tooltip */
+    .tooltip { position:fixed; pointer-events:none; background:#1a1d27; color:var(--text-primary); border-radius:6px; padding:10px; box-shadow:0 6px 18px rgba(0,0,0,0.6); z-index:1000; font-size:13px; border:1px solid var(--border); }
+
+    /* Responsive */
+    @media (max-width:1024px) {
+      .app { margin:12px; padding:12px; }
+      .grid { grid-template-columns:1fr; }
+    }
+    @media (max-width:768px) {
+      .table-wrap { overflow:auto; }
+      .controls { flex-wrap:wrap; }
+      .fagfaner { gap:6px; }
+      .brand h1 { font-size:16px; }
+    }
+
+    /* small helpers */
+    .muted { color:var(--text-secondary); font-size:13px; }
+    .italic { font-style:italic; color:var(--text-secondary); }
+    .btn-small { padding:6px 8px; border-radius:6px; font-size:13px; }
+    .danger { background:var(--danger); color:white; border:0; padding:6px 8px; border-radius:6px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    /********** UPDATED INITIAL DATA (includes uploaded discipline data) **********/
+    const INITIAL_DATA = [
+      {
+        id: "byggtapetsering",
+        navn: "Byggtapetsering",
+        farge: "var(--fag-byggtapetsering)",
+        aktiviteter: [
+          { id: "bt1", navn: "Utbedring skader vinyl", kapasitet: 25, enhet: "m²/dag", notater: "Lapping med fargetilpasset vinyl" },
+          { id: "bt2", navn: "Utbedring skader linoleum", kapasitet: 20, enhet: "m²/dag", notater: "Lapping med fargetilpasset linoleum" },
+          { id: "bt3", navn: "Utbedring antistatisk belegg", kapasitet: 18, enhet: "m²/dag", notater: "ESD-krav" },
+          { id: "bt4", navn: "Linoleum spesialbestilling", kapasitet: 22, enhet: "m²/dag", notater: "Forbo inkl. korkment" },
+          { id: "bt5", navn: "Vinyl våtrom hellimt", kapasitet: 20, enhet: "m²/dag", notater: "Inkl. oppbrett 100mm og sveising" },
+          { id: "bt6", navn: "Oppbrett gulvbelegg (lm)", kapasitet: 40, enhet: "lm/dag", notater: "Løpemeter pr dag" },
+          { id: "bt7", navn: "Avrettingslag betong", kapasitet: 50, enhet: "m²/dag", notater: "Sementbasert sparkling" }
+        ]
+      },
+
+      {
+        id: "bygginnredning",
+        navn: "Fast Bygginnredning",
+        farge: "var(--fag-bygginnredning)",
+        aktiviteter: [
+          { id: "bi1", navn: "Hyller montering", kapasitet: 5, enhet: "stk/dag", notater: "Vegghengte hyller" },
+          { id: "bi2", navn: "Høyskap/garderobeskap", kapasitet: 2.5, enhet: "stk/dag", notater: "Avhengig av størrelse" },
+          { id: "bi3", navn: "Underskap/overskap", kapasitet: 3.5, enhet: "stk/dag", notater: "Kjøkken/lab" },
+          { id: "bi4", navn: "Labinnredning komplett", kapasitet: 0.75, enhet: "stk/dag", notater: "Demo/avtrekk/kompleks" },
+          { id: "bi5", navn: "Kjøkkeninnredning komplett", kapasitet: 0.4, enhet: "stk/dag", notater: "Inkl. tilkoblinger" },
+          { id: "bi6", navn: "Tavler/whiteboard", kapasitet: 5, enhet: "stk/dag", notater: "Veggmonterte tavler" },
+          { id: "bi7", navn: "Resepsjonsdisk (spesial)", kapasitet: 0.1, enhet: "stk/dag", notater: "Spesialtilpasset" }
+        ]
+      },
+
+      {
+        id: "himling",
+        navn: "Himlingsarbeider",
+        farge: "var(--fag-himling)",
+        aktiviteter: [
+          { id: "hi1", navn: "Systemhimling T-profil (ny)", kapasitet: 15, enhet: "m²/dag", notater: "Standard innlegg av plater i T-profil grid" },
+          { id: "hi2", navn: "Systemhimling T-profil (tilbakeføring)", kapasitet: 20, enhet: "m²/dag", notater: "Plater legges tilbake etter teknisk arbeid" },
+          { id: "hi3", navn: "Systemhimling hygiene (PARAFON)", kapasitet: 12, enhet: "m²/dag", notater: "Nøyaktig montering" },
+          { id: "hi4", navn: "Systemhimling metallrist", kapasitet: 10, enhet: "m²/dag", notater: "Tyngre, mer tilpasning" },
+          { id: "hi5", navn: "Systemhimling eikefinert", kapasitet: 8, enhet: "m²/dag", notater: "Presisjonskrav" },
+          { id: "hi6", navn: "Ombygging/tilpasning eksisterende himling", kapasitet: 6, enhet: "m²/dag", notater: "Demontering, justering, remontasje" },
+          { id: "hi7", navn: "Lukking systemhimling etter teknisk", kapasitet: 20, enhet: "m²/dag", notater: "Kun innlegg av plater i eksist. grid" },
+          { id: "hi8", navn: "Akustisk himlingsplate (pålimt)", kapasitet: 8, enhet: "m²/dag", notater: "Limarbeid med 50mm absorbent" },
+          { id: "hi9", navn: "Vask over himling + støvprøve", kapasitet: 15, enhet: "m²/dag", notater: "Må gjøres før lukking" },
+          { id: "hi10", navn: "Montasje inspeksjonsluker", kapasitet: 4, enhet: "stk/dag", notater: "Per stk inkl. tilpasning" }
+        ]
+      },
+
+      {
+        id: "maler",
+        navn: "Malerarbeider",
+        farge: "var(--fag-maler)",
+        aktiviteter: [
+          { id: "ma1", navn: "Rehab vegg pusset tegl", kapasitet: 17, enhet: "m²/dag", notater: "Vask, flikkspark, flekkmaling, mellom+topp" },
+          { id: "ma2", navn: "Rehab vegg tidl. malt", kapasitet: 20, enhet: "m²/dag", notater: "Flikkspark + 2 strøk" },
+          { id: "ma3", navn: "Ny gips vegg K2 (full sparkling)", kapasitet: 15, enhet: "m²/dag", notater: "Strimmel, 2xflikk, 2xskjøt, grunning, 2 strøk" },
+          { id: "ma4", navn: "Ny gips vegg K1 (enklere)", kapasitet: 20, enhet: "m²/dag", notater: "Enklere sparkling" },
+          { id: "ma5", navn: "Ny pusset vegg (maling)", kapasitet: 18, enhet: "m²/dag", notater: "Maling pusset flate" },
+          { id: "ma6", navn: "Ny gipshimling K3 (helsparkling)", kapasitet: 10, enhet: "m²/dag", notater: "Helpsparkling, tidkrevende" },
+          { id: "ma7", navn: "Rehab pusset himling K2", kapasitet: 15, enhet: "m²/dag", notater: "Sliping + 2 strøk" },
+          { id: "ma8", navn: "Rehab betonghimling", kapasitet: 12, enhet: "m²/dag", notater: "Vasking, fjerning løs maling, 2 strøk" },
+          { id: "ma9", navn: "Malt betonggulv", kapasitet: 20, enhet: "m²/dag", notater: "Stålglattet betong" },
+          { id: "ma10", navn: "Støvbinding sjakt/betong", kapasitet: 35, enhet: "m²/dag", notater: "Enkel behandling" },
+          { id: "ma11", navn: "Flikk/etterarbeider", kapasitet: 12, enhet: "m²/dag", notater: "Buffer for uforutsett" },
+          { id: "ma12", navn: "Maling teknisk utstyr", kapasitet: 6, enhet: "stk/dag", notater: "Detaljarbeid" },
+          { id: "ma13", navn: "Maling over akustisk puss", kapasitet: 14, enhet: "m²/dag", notater: "Etter akustikk ferdig" },
+          { id: "ma14", navn: "Listverk maling/flikk", kapasitet: 8, enhet: "lm/dag", notater: "Detaljarbeid" }
+        ]
+      },
+
+      {
+        id: "tomrer",
+        navn: "Tømrerarbeider",
+        farge: "var(--fag-tomrer)",
+        aktiviteter: [
+          { id: "to1", navn: "Innervegger bindingsverk", kapasitet: 8, enhet: "lm/dag", notater: "48x98, enkel gips en side" },
+          { id: "to2", navn: "Gipsplater vegg (én side)", kapasitet: 40, enhet: "m²/dag", notater: "Skruing og sparkling" },
+          { id: "to3", navn: "Dørmontering", kapasitet: 4, enhet: "stk/dag", notater: "Inkl. karm og foring" },
+          { id: "to4", navn: "Vindumontering", kapasitet: 3, enhet: "stk/dag", notater: "Inkl. fuging" },
+          { id: "to5", navn: "Listverk montering", kapasitet: 60, enhet: "lm/dag", notater: "Fotlist, gerikt" },
+          { id: "to6", navn: "Rehab av trevinduer", kapasitet: 1.5, enhet: "stk/dag", notater: "Pussing, kitting, maling" },
+          { id: "to7", navn: "Himling nedlekting stål (ak.puss)", kapasitet: 12, enhet: "m²/dag", notater: "Underkonstruksjon for akustisk puss" },
+          { id: "to8", navn: "Fast gipshimling", kapasitet: 8, enhet: "m²/dag", notater: "Helsparkling/fast gipshimling" },
+          { id: "to9", navn: "Himlingsgrid (system)", kapasitet: 15, enhet: "m²/dag", notater: "Standard systemhimling grid" },
+          { id: "to10", navn: "Underkonstruksjon Baswa", kapasitet: 10, enhet: "m²/dag", notater: "Underkonstruksjon for Baswa akustisk puss" },
+          { id: "to11", navn: "Utfôring dør", kapasitet: 3, enhet: "stk/dag", notater: "Per dør inkl. tilpasning" },
+          { id: "to12", navn: "Karmlister", kapasitet: 40, enhet: "lm/dag", notater: "Montering karmlister" },
+          { id: "to13", navn: "Gulvlister", kapasitet: 30, enhet: "lm/dag", notater: "Montering gulvlister" },
+          { id: "to14", navn: "Akustiske plater vegg", kapasitet: 10, enhet: "m²/dag", notater: "Richfon/akustiske plater" },
+          { id: "to15", navn: "Sjaktvegger tilpasning", kapasitet: 5, enhet: "m²/dag", notater: "Vanskelig tilkomst" },
+          { id: "to16", navn: "Fibersementplater", kapasitet: 8, enhet: "m²/dag", notater: "Tyngre plater" }
+        ]
+      },
+
+      {
+        id: "murer",
+        navn: "Murerarbeider",
+        farge: "var(--fag-murer)",
+        aktiviteter: [
+          { id: "mu1", navn: "Flislegging vegg", kapasitet: 8, enhet: "m²/dag", notater: "Standard 20x20 cm" },
+          { id: "mu2", navn: "Flislegging gulv", kapasitet: 12, enhet: "m²/dag", notater: "Standard 30x30 cm" },
+          { id: "mu3", navn: "Rehab vegg pusset tegl", kapasitet: 6, enhet: "m²/dag", notater: "Hakking, ny puss, filtsing" },
+          { id: "mu4", navn: "Membran våtrom", kapasitet: 15, enhet: "m²/dag", notater: "Smøremembran, 2 strøk" },
+          { id: "mu5", navn: "Avrettingsmasse gulv", kapasitet: 25, enhet: "m²/dag", notater: "Selvutjevnende" }
+        ]
+      }
+    ];
+
+    /********** HJELPEFUNKSJONER **********/
+    function beregnVarighet(mengde, kapasitet, lag) {
+      if (!mengde || mengde <= 0 || !kapasitet || kapasitet <= 0 || !lag || lag <= 0) return 0;
+      return Math.ceil(mengde / kapasitet / lag);
+    }
+
+    function leggTilArbeidsdager(startDato, antallDager) {
+      let dato = new Date(startDato);
+      let talt = 0;
+      while (talt < antallDager) {
+        dato.setDate(dato.getDate() + 1);
+        const dag = dato.getDay();
+        if (dag !== 0 && dag !== 6) {
+          talt++;
+        }
+      }
+      return dato;
+    }
+
+    function formaterDato(dato) {
+      const dd = String(dato.getDate()).padStart(2, '0');
+      const mm = String(dato.getMonth() + 1).padStart(2, '0');
+      const yyyy = dato.getFullYear();
+      return `${dd}.${mm}.${yyyy}`;
+    }
+
+    function formatTimeIso(iso) {
+      if (!iso) return null;
+      const d = new Date(iso);
+      return d.toLocaleString('nb-NO', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    }
+
+    function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+    /********** APP **********/
+    function App() {
+      const [aktiveFag, setAktiveFag] = useState("byggtapetsering");
+      const [prosjektStart, setProsjektStart] = useState("2025-08-18");
+      const [visning, setVisning] = useState("kalkulator");
+      const [ganttVisning, setGanttVisning] = useState("fag");
+      const [planModus, setPlanModus] = useState("sekvensiell");
+      const [sistLagret, setSistLagret] = useState(null);
+
+      const [prosjektData, setProsjektData] = useState(() => {
+        const data = {};
+        INITIAL_DATA.forEach(fag => {
+          data[fag.id] = fag.aktiviteter.map((akt, idx) => ({
+            id: akt.id,
+            navn: akt.navn,
+            kapasitet: akt.kapasitet,
+            enhet: akt.enhet,
+            notater: akt.notater,
+            mengde: 0,
+            lag: 1,
+            startDag: null,
+            lokasjon: "",
+            erKopi: false,
+            originalId: null,
+            rekkefølge: idx
+          }));
+        });
+        return data;
+      });
+
+      // Load from localStorage on mount
+      useEffect(() => {
+        const lagret = localStorage.getItem('prosjektkalkulator_data');
+        if (lagret) {
+          try {
+            const parsed = JSON.parse(lagret);
+            if (parsed.prosjektData) setProsjektData(parsed.prosjektData);
+            if (parsed.prosjektStart) setProsjektStart(parsed.prosjektStart);
+            if (parsed.planModus) setPlanModus(parsed.planModus);
+            if (parsed.tidspunkt) setSistLagret(parsed.tidspunkt);
+          } catch (e) { /* ignore */ }
+        }
+      }, []);
+
+      // Derived: totals per fag and project
+      const fagOppsummering = useMemo(() => {
+        const res = {};
+        Object.keys(prosjektData).forEach(fagId => {
+          const arr = prosjektData[fagId] || [];
+          let sum = 0;
+          arr.forEach(a => {
+            const v = beregnVarighet(a.mengde, a.kapasitet, a.lag);
+            sum += v;
+          });
+          res[fagId] = { dager: sum, aktiviteterUtfylt: arr.filter(a => a.mengde > 0).length, totaltAkt: arr.length };
+        });
+        return res;
+      }, [prosjektData]);
+
+      const prosjektTotal = useMemo(() => {
+        if (planModus === "sekvensiell") {
+          return Object.values(fagOppsummering).reduce((s, f) => s + (f.dager || 0), 0);
+        } else {
+          const alle = beregnStartdager(prosjektData, planModus);
+          if (!alle.length) return 0;
+          const minStart = Math.min(...alle.map(a => a.startDag));
+          const maxEnd = Math.max(...alle.map(a => a.startDag + a.varighet - 1));
+          return Math.max(0, maxEnd - minStart + 1);
+        }
+      }, [fagOppsummering, prosjektData, planModus, prosjektStart]);
+
+      /***** LAGRING *****/
+      function lagreData() {
+        const lagreObjekt = {
+          prosjektData,
+          prosjektStart,
+          planModus,
+          tidspunkt: new Date().toISOString()
+        };
+        localStorage.setItem('prosjektkalkulator_data', JSON.stringify(lagreObjekt));
+        setSistLagret(lagreObjekt.tidspunkt);
+      }
+
+      function hentData() {
+        const lagret = localStorage.getItem('prosjektkalkulator_data');
+        if (lagret) {
+          const data = JSON.parse(lagret);
+          setProsjektData(data.prosjektData);
+          setProsjektStart(data.prosjektStart);
+          setPlanModus(data.planModus);
+          setSistLagret(data.tidspunkt);
+        }
+      }
+
+      function nullstillData() {
+        const data = {};
+        INITIAL_DATA.forEach(fag => {
+          data[fag.id] = fag.aktiviteter.map((akt, idx) => ({
+            id: akt.id,
+            navn: akt.navn,
+            kapasitet: akt.kapasitet,
+            enhet: akt.enhet,
+            notater: akt.notater,
+            mengde: 0,
+            lag: 1,
+            startDag: null,
+            lokasjon: "",
+            erKopi: false,
+            originalId: null,
+            rekkefølge: idx
+          }));
+        });
+        setProsjektData(data);
+      }
+
+      /***** KALKULATOR-FUNKSJONER *****/
+      function oppdaterAktivitet(fagId, aktId, patch) {
+        setProsjektData(prev => {
+          const copy = clone(prev);
+          copy[fagId] = copy[fagId].map(a => a.id === aktId ? { ...a, ...patch } : a);
+          return copy;
+        });
+      }
+
+      function leggTilKopi(fagId, originalAktId, lokasjon) {
+        setProsjektData(prev => {
+          const copy = clone(prev);
+          const arr = copy[fagId] || [];
+          const idx = arr.findIndex(a => a.id === originalAktId);
+          const original = arr[idx];
+          const nyId = String(Date.now()) + Math.floor(Math.random()*1000);
+          const ny = {
+            id: nyId,
+            navn: original.navn,
+            kapasitet: original.kapasitet,
+            enhet: original.enhet,
+            notater: original.notater,
+            mengde: 0,
+            lag: 1,
+            startDag: null,
+            lokasjon: lokasjon || "",
+            erKopi: true,
+            originalId: original.id,
+            rekkefølge: original.rekkefølge + 0.1
+          };
+          arr.splice(idx+1, 0, ny);
+          arr.forEach((a,i)=>a.rekkefølge=i);
+          copy[fagId] = arr;
+          return copy;
+        });
+      }
+
+      function slettKopi(fagId, aktId) {
+        setProsjektData(prev => {
+          const copy = clone(prev);
+          copy[fagId] = copy[fagId].filter(a => a.id !== aktId);
+          return copy;
+        });
+      }
+
+      /***** GANTT-BEREGNING *****/
+      function beregnStartdager(prosjektDataLocal, planModusLocal) {
+        let gjeldendeDag = 1;
+        const resultat = [];
+        INITIAL_DATA.forEach(fag => {
+          const fagAktiviteter = (prosjektDataLocal[fag.id] || []).slice().sort((a,b)=> (a.rekkefølge||0)-(b.rekkefølge||0));
+          fagAktiviteter.forEach(akt => {
+            const varighet = beregnVarighet(akt.mengde, akt.kapasitet, akt.lag);
+            if (varighet <= 0) return;
+            let startDag;
+            if (planModusLocal === "fri" && akt.startDag !== null && akt.startDag > 0) {
+              startDag = akt.startDag;
+            } else {
+              startDag = gjeldendeDag;
+            }
+            resultat.push({
+              fagId: fag.id,
+              fagNavn: fag.navn,
+              farge: fag.farge,
+              aktivitetId: akt.id,
+              aktivitetNavn: akt.erKopi ? `${akt.navn} - ${akt.lokasjon}` : akt.navn,
+              startDag: startDag,
+              varighet: varighet,
+              mengde: akt.mengde,
+              kapasitet: akt.kapasitet,
+              enhet: akt.enhet,
+              lag: akt.lag,
+              lokasjon: akt.lokasjon
+            });
+            if (planModusLocal === "sekvensiell") {
+              gjeldendeDag = startDag + varighet;
+            }
+          });
+        });
+        return resultat;
+      }
+
+      const ganttData = useMemo(() => beregnStartdager(prosjektData, planModus), [prosjektData, planModus]);
+
+      /***** OPPDATER STARTDAG FRA GANTT DRAG *****/
+      function oppdaterStartDag(fagId, aktId, nyStartDag) {
+        setProsjektData(prev => {
+          const copy = clone(prev);
+          copy[fagId] = copy[fagId].map(a => a.id === aktId ? { ...a, startDag: nyStartDag } : a);
+          return copy;
+        });
+      }
+
+      /***** EKSPORT TIL EXCEL (MS Project-format) *****/
+      function eksporterTilExcel() {
+        const rows = [];
+        let idCounter = 1;
+        // prosjekt rad
+        rows.push({
+          _ID: idCounter, Unik_ID: idCounter, Aktiv: "Ja", Aktivitetsmodus: "Automatisk planlagt",
+          Aktivitetsnavn: "Byggeprosjekt", Varighet: `${prosjektTotal} dager`, Type: "Fast varighet",
+          Disposisjonsnivå: 1, Opprinnelig_varighet: `${prosjektTotal} dager`, Foregående: "",
+          Startdato: "", Sluttdato: "", WBS: "1", Milepæl: "Nei", Sammendrag: "Ja", Tekst_1: "", Tekst_2: "", Tekst_3: ""
+        });
+        idCounter++;
+
+        INITIAL_DATA.forEach((fag, fi) => {
+          const fagRowId = idCounter;
+          rows.push({
+            _ID: idCounter, Unik_ID: idCounter, Aktiv: "Ja", Aktivitetsmodus: "Automatisk planlagt",
+            Aktivitetsnavn: fag.navn, Varighet: `${(fagOppsummering[fag.id]?.dager)||0} dager`, Type: "Fast varighet",
+            Disposisjonsnivå: 2, Opprinnelig_varighet: `${(fagOppsummering[fag.id]?.dager)||0} dager`, Foregående: "",
+            Startdato: "", Sluttdato: "", WBS: `1.${fi+1}`, Milepæl: "Nei", Sammendrag: "Ja", Tekst_1: "", Tekst_2: "", Tekst_3: ""
+          });
+          idCounter++;
+
+          const aktiviteter = (prosjektData[fag.id] || []).slice().sort((a,b)=> (a.rekkefølge||0)-(b.rekkefølge||0));
+          let forrigeAktId = "";
+          aktiviteter.forEach((akt, ai) => {
+            const varighet = beregnVarighet(akt.mengde, akt.kapasitet, akt.lag);
+            if (varighet <= 0) return;
+            const startDag = (planModus === "fri" && akt.startDag) ? akt.startDag : (() => {
+              const gd = ganttData.find(g => g.aktivitetId === akt.id && g.fagId === fag.id);
+              return gd ? gd.startDag : 1;
+            })();
+            const startDatoObj = leggTilArbeidsdager(new Date(prosjektStart), startDag - 1);
+            const sluttDatoObj = leggTilArbeidsdager(startDatoObj, varighet - 1);
+            rows.push({
+              _ID: idCounter, Unik_ID: idCounter, Aktiv: "Ja", Aktivitetsmodus: "Automatisk planlagt",
+              Aktivitetsnavn: akt.erKopi ? `${akt.navn} - ${akt.lokasjon}` : akt.navn,
+              Varighet: `${varighet} dager`, Type: "Fast varighet",
+              Disposisjonsnivå: 3, Opprinnelig_varighet: `${varighet} dager`, Foregående: forrigeAktId || "",
+              Startdato: formaterDato(startDatoObj), Sluttdato: formaterDato(sluttDatoObj), WBS: `1.${fi+1}.${ai+1}`,
+              Milepæl: "Nei", Sammendrag: "Nei", Tekst_1: fag.navn, Tekst_2: akt.erKopi ? akt.lokasjon : "", Tekst_3: `${akt.lag} lag`
+            });
+            forrigeAktId = idCounter;
+            idCounter++;
+          });
+        });
+
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Aktivitet_eksporttabell");
+        XLSX.writeFile(wb, "prosjektplan.xlsx");
+      }
+
+      /***** UI RENDERING *****/
+      return (
+        <div className="app" role="application" aria-label="Prosjektkalkulator">
+          <header>
+            <div className="brand">
+              <h1>Prosjektkalkulator</h1>
+              <div className="meta">Start: <strong style={{color:'var(--text-primary)'}}>{prosjektStart}</strong></div>
+              <div className="meta">Total varighet: <strong style={{color:'var(--text-primary)'}}>{prosjektTotal} dager</strong></div>
+            </div>
+
+            <div className="controls">
+              <button onClick={lagreData} title="Lagre">💾 Lagre</button>
+              <button onClick={hentData} title="Hent">📂 Hent</button>
+              <button className="danger" onClick={nullstillData} title="Nullstill">🗑 Nullstill</button>
+              <button className="ghost" onClick={eksporterTilExcel} title="MS Project">📅 MS Project</button>
+            </div>
+          </header>
+
+          <nav className="tabs" role="tablist" aria-label="Hovedseksjoner">
+            <div className={`tab ${visning==="kalkulator"?"active":""}`} onClick={()=>setVisning("kalkulator")}>Kalkulator</div>
+            <div className={`tab ${visning==="gantt"?"active":""}`} onClick={()=>setVisning("gantt")}>Gantt-diagram</div>
+            <div className={`tab ${visning==="sammendrag"?"active":""}`} onClick={()=>setVisning("sammendrag")}>Sammendrag</div>
+          </nav>
+
+          <main>
+            {visning === "kalkulator" && (
+              <section className="kalkulator" aria-label="Kalkulator">
+                <div className="fagfaner" role="tablist" aria-label="Fagfaner">
+                  {INITIAL_DATA.map(fag => (
+                    <div key={fag.id} className={`fagfane ${aktiveFag===fag.id?"active":""}`} onClick={()=>setAktiveFag(fag.id)}>
+                      <div className="fag-dot" style={{background:fag.farge}}></div>
+                      <div style={{fontSize:14}}>{fag.navn}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="table-wrap" role="region" aria-label="Aktivitetstabell">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{width:200}}>Aktivitet</th>
+                        <th style={{width:100}}>Kapasitet</th>
+                        <th style={{width:100}}>Mengde</th>
+                        <th style={{width:80}}>Lag</th>
+                        <th style={{width:80}}>Startdag</th>
+                        <th style={{width:80}}>Varighet</th>
+                        <th style={{width:150}}>Notater</th>
+                        <th style={{width:120}}>Handlinger</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(prosjektData[aktiveFag] || []).slice().sort((a,b)=> (a.rekkefølge||0)-(b.rekkefølge||0)).map((akt) => {
+                        const varighet = beregnVarighet(akt.mengde, akt.kapasitet, akt.lag);
+                        return (
+                          <tr key={akt.id}>
+                            <td>
+                              {akt.erKopi ? <span className="italic">{akt.navn} <span className="muted">({akt.lokasjon})</span></span> : <span>{akt.navn}</span>}
+                            </td>
+                            <td className="center">{akt.kapasitet} {akt.enhet}</td>
+                            <td>
+                              <input type="number" min="0" step="any" value={akt.mengde} onChange={(e)=>{
+                                const val = Number(e.target.value);
+                                if (isNaN(val) || val < 0) return;
+                                oppdaterAktivitet(aktiveFag, akt.id, { mengde: val });
+                              }} />
+                            </td>
+                            <td className="center">
+                              <input type="number" min="1" max="5" value={akt.lag} onChange={(e)=>{
+                                let val = Number(e.target.value);
+                                if (isNaN(val) || val < 1) val = 1;
+                                if (val > 5) val = 5;
+                                oppdaterAktivitet(aktiveFag, akt.id, { lag: val });
+                              }} />
+                            </td>
+                            <td className="center">
+                              <input type="number" min="1" value={akt.startDag || ""} onChange={(e)=>{
+                                const v = e.target.value === "" ? null : Math.max(1, Number(e.target.value));
+                                oppdaterAktivitet(aktiveFag, akt.id, { startDag: v });
+                              }} placeholder="" />
+                            </td>
+                            <td className="center">{varighet > 0 ? varighet : "—"}</td>
+                            <td className="notes">{akt.notater}</td>
+                            <td className="actions center">
+                              <button className="btn-small" onClick={()=>{
+                                const lok = prompt("Lokasjon for kopi (f.eks. 3. etasje):", "");
+                                if (lok !== null) leggTilKopi(aktiveFag, akt.id, lok);
+                              }}>📋 Kopi</button>
+                              {akt.erKopi && <button className="btn-small danger" onClick={()=>slettKopi(aktiveFag, akt.id)}>✕</button>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="totals">
+                  <div><strong>Totalt for {INITIAL_DATA.find(f=>f.id===aktiveFag).navn}:</strong> {fagOppsummering[aktiveFag]?.dager || 0} dager</div>
+                  <div><strong>Totalt for prosjektet:</strong> {prosjektTotal} dager</div>
+                  <div style={{marginLeft:'auto'}} className="muted">Planmodus:
+                    <select value={planModus} onChange={(e)=>setPlanModus(e.target.value)} style={{marginLeft:8, background:'var(--bg-tertiary)', color:'var(--text-primary)', border:'1px solid var(--border)', padding:'6px', borderRadius:6}}>
+                      <option value="sekvensiell">sekvensiell</option>
+                      <option value="fri">fri</option>
+                    </select>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {visning === "gantt" && (
+              <section aria-label="Gantt">
+                <div className="gantt-controls">
+                  <div style={{display:'flex', gap:6}}>
+                    <button className={`btn-small ${ganttVisning==="fag"?"active":""}`} onClick={()=>setGanttVisning("fag")}>Per fag</button>
+                    <button className={`btn-small ${ganttVisning==="aktivitet"?"active":""}`} onClick={()=>setGanttVisning("aktivitet")}>Per aktivitet</button>
+                    <button className={`btn-small ${ganttVisning==="kalender"?"active":""}`} onClick={()=>setGanttVisning("kalender")}>Kalender</button>
+                  </div>
+                  <div style={{marginLeft:12}}>
+                    <button className="btn-small" onClick={()=>setPlanModus("sekvensiell")}>Sekvensiell</button>
+                    <button className="btn-small" onClick={()=>setPlanModus("fri")}>Fri plassering</button>
+                  </div>
+                </div>
+
+                <div className="gantt-area" id="ganttArea">
+                  {/* Timeline: show weeks */}
+                  <div className="timeline" aria-hidden>
+                    {Array.from({length: 20}).map((_,i) => {
+                      const ukeNum = i+1;
+                      const ukeStart = new Date(prosjektStart);
+                      ukeStart.setDate(ukeStart.getDate() + (ukeNum-1)*7);
+                      return <div key={i} className="week">Uke {ukeNum} — {formaterDato(ukeStart)}</div>;
+                    })}
+                  </div>
+
+                  <div className="gantt-grid">
+                    {ganttVisning === "fag" && (
+                      INITIAL_DATA.map((fag, idx) => {
+                        const aktiviteter = ganttData.filter(g => g.fagId === fag.id);
+                        if (!aktiviteter.length) {
+                          return (
+                            <div key={fag.id} className="gantt-row" style={{height:40}}>
+                              <div style={{width:200}}>{fag.navn}</div>
+                            </div>
+                          );
+                        }
+                        const minStart = Math.min(...aktiviteter.map(a=>a.startDag));
+                        const maxEnd = Math.max(...aktiviteter.map(a=>a.startDag + a.varighet - 1));
+                        const left = (minStart - 1) * 30;
+                        const width = (maxEnd - minStart + 1) * 30;
+                        return (
+                          <div key={fag.id} className="gantt-row" style={{height:40}}>
+                            <div style={{width:200}}>{fag.navn}</div>
+                            <div style={{position:'relative', flex:1, minHeight:28}}>
+                              <div
+                                className="gantt-bar"
+                                style={{ left: left + 210, width: width, background: fag.farge }}
+                                title={`${fag.navn}: ${minStart} - ${maxEnd}`}
+                              >
+                                {fag.navn}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+
+                    {ganttVisning === "aktivitet" && (
+                      INITIAL_DATA.map((fag, fi) => {
+                        const aktiviteter = ganttData.filter(g => g.fagId === fag.id).sort((a,b)=>a.startDag-b.startDag);
+                        if (!aktiviteter.length) return null;
+                        return (
+                          <div key={fag.id} style={{marginBottom:8}}>
+                            <div style={{color:'var(--text-secondary)', fontSize:13, marginBottom:6}}>{fag.navn}</div>
+                            {aktiviteter.map((akt, ai) => {
+                              const left = (akt.startDag - 1) * 30;
+                              const width = akt.varighet * 30;
+                              return (
+                                <div key={akt.aktivitetId} className="gantt-row" style={{height:40}}>
+                                  <div style={{width:200}}>{akt.aktivitetNavn}</div>
+                                  <div style={{position:'relative', flex:1}}>
+                                    <DraggableBar
+                                      aktivitet={akt}
+                                      fag={fag}
+                                      left={left}
+                                      width={width}
+                                      onUpdateStart={(ny)=>oppdaterStartDag(fag.id, akt.aktivitetId, ny)}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })
+                    )}
+
+                    {ganttVisning === "kalender" && (
+                      (() => {
+                        const alle = ganttData.slice().sort((a,b)=>a.startDag-b.startDag);
+                        if (!alle.length) return <div className="muted">Fyll inn mengder for å se Gantt-diagrammet</div>;
+                        return alle.map((akt, idx) => {
+                          const left = (akt.startDag - 1) * 30;
+                          const width = akt.varighet * 30;
+                          return (
+                            <div key={akt.aktivitetId} className="gantt-row" style={{height:40}}>
+                              <div style={{width:200}}>{akt.aktivitetNavn} <span className="muted">({akt.fagNavn})</span></div>
+                              <div style={{position:'relative', flex:1}}>
+                                <DraggableBar
+                                  aktivitet={akt}
+                                  fag={INITIAL_DATA.find(f=>f.id===akt.fagId)}
+                                  left={left}
+                                  width={width}
+                                  onUpdateStart={(ny)=>oppdaterStartDag(akt.fagId, akt.aktivitetId, ny)}
+                                />
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()
+                    )}
+                  </div>
+
+                  <div className="legend" aria-hidden>
+                    {INITIAL_DATA.map(f => <div key={f.id}><span style={{display:'inline-block', width:12, height:12, background:f.farge, marginRight:6}}></span>{f.navn}</div>)}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {visning === "sammendrag" && (
+              <section aria-label="Sammendrag">
+                <div className="grid">
+                  {INITIAL_DATA.map(fag => {
+                    const opp = fagOppsummering[fag.id] || { dager:0, aktiviteterUtfylt:0, totaltAkt:0 };
+                    const aktiviteter = (prosjektData[fag.id] || []).filter(a=>a.mengde>0).map(a=>({
+                      navn: a.erKopi ? `${a.navn} - ${a.lokasjon}` : a.navn,
+                      varighet: beregnVarighet(a.mengde, a.kapasitet, a.lag)
+                    })).sort((a,b)=>b.varighet-a.varighet);
+                    const lengste = aktiviteter.length ? Math.max(...aktiviteter.map(a=>a.varighet)) : 1;
+                    return (
+                      <div key={fag.id} className="card">
+                        <div className="leftbar" style={{background:fag.farge}}></div>
+                        <div className="card-header">
+                          <div style={{display:'flex', flexDirection:'column'}}>
+                            <div style={{fontWeight:600}}>{fag.navn}</div>
+                            <div className="muted">{opp.aktiviteterUtfylt} av {opp.totaltAkt} aktiviteter utfylt</div>
+                          </div>
+                          <div style={{textAlign:'right'}}>
+                            <div style={{fontSize:20, fontWeight:700}}>{opp.dager} dager</div>
+                          </div>
+                        </div>
+
+                        <div style={{marginTop:8}}>
+                          <div className="progress" style={{marginBottom:8}}>
+                            <i style={{width: `${Math.round((opp.aktiviteterUtfylt/Math.max(1,opp.totaltAkt))*100)}%`, background: fag.farge}}></i>
+                          </div>
+
+                          <div>
+                            {aktiviteter.length ? aktiviteter.map((a, i) => (
+                              <div key={i} style={{display:'flex', alignItems:'center', gap:8, marginBottom:6}}>
+                                <div style={{width:160}}>{a.navn}</div>
+                                <div style={{flex:1, height:12, background:'rgba(255,255,255,0.03)', borderRadius:6}}>
+                                  <div style={{width:`${(a.varighet/lengste)*100}%`, height:'100%', background:fag.farge, borderRadius:6}}></div>
+                                </div>
+                                <div style={{width:60, textAlign:'right'}}>{a.varighet}d</div>
+                              </div>
+                            )) : <div className="muted">Ingen aktiviteter utfylt</div>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+          </main>
+
+          <footer style={{marginTop:18, color:'var(--text-secondary)', fontSize:13}}>
+            {sistLagret ? `Sist lagret: ${formatTimeIso(sistLagret)}` : 'Ikke lagret enda'}
+          </footer>
+        </div>
+      );
+    }
+
+    /********** DraggableBar komponent (horisontal drag) **********/
+    function DraggableBar({ aktivitet, fag, left, width, onUpdateStart }) {
+      const barRef = useRef(null);
+      const tooltipRef = useRef(null);
+      const [dragging, setDragging] = useState(false);
+      const [tooltip, setTooltip] = useState(null);
+
+      useEffect(() => {
+        return () => {
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        };
+      }, []);
+
+      let startX = 0;
+      let originalStart = aktivitet.startDag;
+
+      function onMouseDown(e) {
+        e.preventDefault();
+        startX = e.clientX;
+        originalStart = aktivitet.startDag;
+        setDragging(true);
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      }
+
+      function onMouseMove(e) {
+        const deltaX = e.clientX - startX;
+        const deltaDager = Math.round(deltaX / 30);
+        const ny = Math.max(1, (originalStart || 1) + deltaDager);
+        onUpdateStart(ny);
+        setTooltip({
+          x: e.clientX + 12,
+          y: e.clientY + 12,
+          content: {
+            navn: aktivitet.aktivitetNavn,
+            varighet: aktivitet.varighet,
+            startDag: ny,
+            dato: formaterDato(leggTilArbeidsdager(new Date(document.querySelector('input[type="date"]')?.value || '2025-08-18'), ny-1)),
+            mengde: aktivitet.mengde,
+            kapasitet: aktivitet.kapasitet,
+            lag: aktivitet.lag,
+            lokasjon: aktivitet.lokasjon
+          }
+        });
+      }
+
+      function onMouseUp() {
+        setDragging(false);
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        setTooltip(null);
+      }
+
+      function onMouseEnter(e) {
+        setTooltip({
+          x: e.clientX + 12,
+          y: e.clientY + 12,
+          content: {
+            navn: aktivitet.aktivitetNavn,
+            varighet: aktivitet.varighet,
+            startDag: aktivitet.startDag,
+            dato: formaterDato(leggTilArbeidsdager(new Date(document.querySelector('input[type="date"]')?.value || '2025-08-18'), (aktivitet.startDag||1)-1)),
+            mengde: aktivitet.mengde,
+            kapasitet: aktivitet.kapasitet,
+            lag: aktivitet.lag,
+            lokasjon: aktivitet.lokasjon
+          }
+        });
+      }
+
+      function onMouseLeave() {
+        if (!dragging) setTooltip(null);
+      }
+
+      return (
+        <>
+          <div
+            ref={barRef}
+            className="gantt-bar"
+            onMouseDown={onMouseDown}
+            onMouseEnter={onMouseEnter}
+            onMouseLeave={onMouseLeave}
+            style={{
+              left: left + 210,
+              width: width,
+              background: fag.farge,
+              top: 6
+            }}
+          >
+            {aktivitet.aktivitetNavn}
+          </div>
+          {tooltip && (
+            <div className="tooltip" style={{left: tooltip.x, top: tooltip.y}}>
+              <div style={{fontWeight:700, marginBottom:6}}>{tooltip.content.navn}</div>
+              <div>Varighet: <strong>{tooltip.content.varighet} dager</strong></div>
+              <div>Startdag: {tooltip.content.startDag} → {tooltip.content.dato}</div>
+              <div>Mengde: {tooltip.content.mengde} {aktivitet.enhet}</div>
+              <div>Kapasitet: {tooltip.content.kapasitet} {aktivitet.enhet}</div>
+              <div>Lag: {tooltip.content.lag}</div>
+              {tooltip.content.lokasjon && <div>Lokasjon: {tooltip.content.lokasjon}</div>}
+            </div>
+          )}
+        </>
+      );
+    }
+
+    /********** Render App **********/
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
